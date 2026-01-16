@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L'Oracolo Matematico - SuperEnalotto AI</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: radial-gradient(circle at center, #1a2a6c, #b21f1f, #fdbb2d);
+            background-size: 200% 200%;
+            animation: gradientBG 20s ease infinite;
+            color: white;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            background: rgba(16, 16, 16, 0.85);
+            backdrop-filter: blur(25px);
+            padding: 40px;
+            border-radius: 30px;
+            box-shadow: 0 0 60px rgba(0,0,0,0.7), inset 0 0 2px rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        header { text-align: center; margin-bottom: 30px; }
+
+        h1 {
+            font-size: 3rem;
+            margin: 0;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            filter: drop-shadow(0 0 10px rgba(0, 210, 255, 0.3));
+        }
+
+        p.subtitle { color: #aaa; font-size: 1.1rem; margin-top: 10px; }
+
+        .input-section {
+            background: rgba(255,255,255,0.03);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #4cd137;
+            border: 1px solid #444;
+            border-radius: 10px;
+            padding: 15px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+            resize: vertical;
+            box-sizing: border-box;
+            transition: border 0.3s;
+        }
+        textarea:focus { outline: none; border-color: #00d2ff; }
+
+        .btn-group { display: flex; gap: 15px; justify-content: center; margin-top: 15px; }
+
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover { transform: translateY(-3px); }
+        button:active { transform: translateY(0); }
+
+        .btn-load { background: #485460; color: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .btn-run {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(118, 75, 162, 0.5);
+            padding: 15px 40px;
+            font-size: 1.2rem;
+        }
+
+        .heatmap-container { margin-bottom: 30px; }
+        .heatmap-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+        .cell {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #2d3436;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #b2bec3;
+            cursor: default;
+            position: relative;
+            transition: transform 0.2s;
+        }
+        .cell:hover { transform: scale(1.3); z-index: 10; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        .cell[data-status="hot"] { background: #ff4757; color: white; box-shadow: 0 0 10px rgba(255, 71, 87, 0.4); }
+        .cell[data-status="cold"] { background: #2ed573; color: black; box-shadow: 0 0 10px rgba(46, 213, 115, 0.4); }
+        .cell[data-status="trend"] { background: #ffa502; color: black; box-shadow: 0 0 10px rgba(255, 165, 2, 0.4); }
+
+        /* Effetto Simulazione */
+        .cell.simulating-active {
+            background: #00d2ff !important;
+            color: #fff !important;
+            box-shadow: 0 0 20px #00d2ff, 0 0 40px #00d2ff;
+            transform: scale(1.2);
+            z-index: 100;
+            transition: all 0.1s ease;
+        }
+
+        .loader-box {
+            height: 8px;
+            background: #2d3436;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 20px 0;
+            display: none;
+        }
+        .loader-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        .results-box { display: none; animation: fadeIn 0.5s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-left: 5px solid #00d2ff;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .card h3 { margin: 0 0 5px 0; font-size: 1rem; color: #a4b0be; }
+        .card .numbers { font-size: 1.8rem; font-family: 'Consolas', monospace; color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.2); }
+        .card .desc { font-size: 0.8rem; color: #747d8c; margin-top: 5px; }
+        .icon { font-size: 2.5rem; margin-left: 20px; filter: drop-shadow(0 0 5px rgba(255,255,255,0.2)); }
+
+        .system-box {
+            background: rgba(0,0,0,0.3);
+            border: 1px dashed #555;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 10px;
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>L'Oracolo Matematico</h1>
+        <p class="subtitle">Simulazione Monte Carlo & Analisi Predittiva</p>
+    </header>
+
+    <div class="input-section">
+        <textarea id="dataInput" placeholder="Incolla qui le estrazioni (formato: 1,2,3,4,5,6 | SS: ...)..."></textarea>
+        <div class="btn-group">
+            <button class="btn-load" onclick="loadDemoData()">📂 Carica Archivio Storico</button>
+            <button class="btn-run" onclick="startOracle()">🔮 Avvia Simulazione</button>
+        </div>
+    </div>
+
+    <div class="heatmap-container">
+        <div class="legend">
+            <span><span class="dot" style="background:#ff4757"></span>Frequente</span>
+            <span><span class="dot" style="background:#2ed573"></span>Ritardatario</span>
+            <span><span class="dot" style="background:#ffa502"></span>Trend Recente</span>
+        </div>
+        <div id="grid" class="heatmap-grid"></div>
+    </div>
+
+    <div id="loader" class="loader-box">
+        <div id="bar" class="loader-bar"></div>
+    </div>
+
+    <div id="results" class="results-box"></div>
+</div>
+
+<script>
+    // --- DATI DEMO ---
+    const DEMO_DATA = [
+        "7,9,17,54,73,90 | SS: 3",
+        "26,38,43,46,72,73 | SS: 45",
+        "20,23,40,51,55,85 | SS: 80",
+        "18,40,54,83,85,89 | SS: 57",
+        "5,9,15,17,48,74 | SS: 75",
+        "12,14,18,53,84,86 | SS: 35",
+        "2,8,29,47,59,65 | SS: 26",
+        "18,20,21,23,40,43 | SS: 10",
+        "9,28,43,50,61,88 | SS: 62",
+        "1,12,20,21,42,58 | SS: 34",
+        "8,16,29,61,65,69 | SS: 85",
+        "5,17,28,59,70,90 | SS: 66",
+        "12,30,45,48,59,60 | SS: 90",
+        "10,19,29,30,56,71 | SS: 13",
+        "1,38,42,78,82,84 | SS: 71",
+        "8,31,51,65,78,79 | SS: 77",
+        "14,44,72,81,85,86 | SS: 47",
+        "7,21,35,38,64,80 | SS: 87",
+        "2,5,7,36,58,64 | SS: 62",
+        "2,18,24,35,41,84 | SS: 20",
+        "7,28,63,69,73,77 | SS: 14",
+        "16,52,60,75,81,88 | SS: 49",
+        "11,24,42,50,89,90 | SS: 44",
+        "2,14,28,36,78,85 | SS: 11",
+        "16,18,22,24,34,80 | SS: 53",
+        "8,19,20,41,74,84 | SS: 74",
+        "36,38,45,61,79,83 | SS: 52",
+        "6,9,17,20,60,67, | SS: 73",
+        "29,33,47,56,69,89 | SS: 7"
+    ];
+
+    // Variabili Globali
+    let scores = new Array(91).fill(0);
+    let scoresSS = new Array(91).fill(0);
+    let parsedHistory = [];
+    let parsedSuperStars = [];
+    let simInterval = null; // Timer per l'animazione visiva
+
+    // Inizializza Griglia Vuota
+    function initGrid() {
+        const grid = document.getElementById('grid');
+        grid.innerHTML = '';
+        for(let i=1; i<=90; i++) {
+            const div = document.createElement('div');
+            div.className = 'cell';
+            div.textContent = i;
+            div.id = `cell-${i}`;
+            grid.appendChild(div);
+        }
+    }
+    initGrid();
+
+    // Effetto Visivo Simulazione
+    function animateSimulation() {
+        // Rimuove classe da tutti
+        const active = document.querySelectorAll('.cell.simulating-active');
+        active.forEach(c => c.classList.remove('simulating-active'));
+
+        // Accende casualmente 5-10 celle
+        const count = Math.floor(Math.random() * 6) + 5; 
+        for(let i=0; i<count; i++) {
+            const n = Math.floor(Math.random() * 90) + 1;
+            const cell = document.getElementById(`cell-${n}`);
+            if(cell) cell.classList.add('simulating-active');
+        }
+    }
+
+    function clearSimulationEffects() {
+        clearInterval(simInterval);
+        const active = document.querySelectorAll('.cell.simulating-active');
+        active.forEach(c => c.classList.remove('simulating-active'));
+    }
+
+    // Carica Dati Demo
+    function loadDemoData() {
+        document.getElementById('dataInput').value = DEMO_DATA.join('\n');
+        calculateStats();
+    }
+
+    // Parser
+    function parseData() {
+        const text = document.getElementById('dataInput').value.trim();
+        if(!text) return { data: [], ss: [] };
+        
+        const lines = text.split('\n');
+        const data = [];
+        const ssData = [];
+
+        lines.forEach(l => {
+            const parts = l.split('|');
+            const partNums = parts[0];
+            if(!partNums) return;
+            const nums = partNums.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n));
+            
+            if(nums.length === 6) {
+                data.push(nums);
+                let ssVal = null;
+                if (parts[1]) {
+                    const match = parts[1].match(/(\d+)/);
+                    if (match) {
+                        const val = parseInt(match[1]);
+                        if(val >= 1 && val <= 90) ssVal = val;
+                    }
+                }
+                ssData.push(ssVal);
+            }
+        });
+        return { data, ss: ssData };
+    }
+
+    // Calcolo Pesi & Heatmap
+    function calculateStats() {
+        const parsed = parseData();
+        parsedHistory = parsed.data;
+        parsedSuperStars = parsed.ss;
+
+        if(parsedHistory.length === 0) return;
+
+        // 1. Statistiche SESTINA
+        const freq = new Array(91).fill(0);
+        const ritardo = new Array(91).fill(0);
+        const recentFreq = new Array(91).fill(0);
+
+        parsedHistory.forEach(row => row.forEach(n => freq[n]++));
+
+        for(let n=1; n<=90; n++) {
+            let r = 0;
+            for(let i=0; i<parsedHistory.length; i++) {
+                if(parsedHistory[i].includes(n)) break;
+                r++;
+            }
+            ritardo[n] = r;
+        }
+
+        const limit = Math.min(parsedHistory.length, 12);
+        for(let i=0; i<limit; i++) {
+            parsedHistory[i].forEach(n => recentFreq[n]++);
+        }
+
+        // 2. Statistiche SUPERSTAR
+        const freqSS = new Array(91).fill(0);
+        const ritSS = new Array(91).fill(0);
+        
+        const validSS = parsedSuperStars.filter(n => n !== null);
+        validSS.forEach(n => freqSS[n]++);
+
+        for(let n=1; n<=90; n++) {
+            let r = 0;
+            for(let i=0; i<parsedSuperStars.length; i++) {
+                if (parsedSuperStars[i] === n) break; 
+                r++;
+            }
+            ritSS[n] = r;
+        }
+
+        // Calcolo Score SESTINA
+        scores = new Array(91).fill(0);
+        const maxF = Math.max(...freq) || 1;
+        const maxR = Math.max(...ritardo) || 1;
+        
+        for(let n=1; n<=90; n++) {
+            const sFreq = freq[n] / maxF;
+            const sRit = ritardo[n] / maxR;
+            const sRec = (recentFreq[n] > 1) ? 0.2 : 0;
+            scores[n] = (sFreq * 0.4) + (sRit * 0.4) + sRec;
+
+            const cell = document.getElementById(`cell-${n}`);
+            cell.removeAttribute('data-status');
+            if (ritardo[n] > 30) cell.setAttribute('data-status', 'cold');
+            else if (freq[n] > (parsedHistory.length * 0.15)) cell.setAttribute('data-status', 'hot');
+            else if (recentFreq[n] >= 2) cell.setAttribute('data-status', 'trend');
+            cell.title = `Num: ${n} | Rit: ${ritardo[n]} | Freq: ${freq[n]}`;
+        }
+
+        // Calcolo Score SUPERSTAR
+        scoresSS = new Array(91).fill(0);
+        const maxFSS = Math.max(...freqSS) || 1;
+        const maxRSS = Math.max(...ritSS) || 1;
+
+        for(let n=1; n<=90; n++) {
+            const sFreq = freqSS[n] / maxFSS;
+            const sRit = ritSS[n] / maxRSS;
+            scoresSS[n] = (sFreq * 0.3) + (sRit * 0.7);
+        }
+    }
+
+    // Input Listener
+    document.getElementById('dataInput').addEventListener('input', calculateStats);
+
+    // --- SIMULAZIONE ---
+    async function startOracle() {
+        calculateStats();
+
+        if(parsedHistory.length === 0) {
+            alert("⚠️ Carica prima i dati storici!");
+            return;
+        }
+
+        const loader = document.getElementById('loader');
+        const bar = document.getElementById('bar');
+        const results = document.getElementById('results');
+
+        loader.style.display = 'block';
+        results.style.display = 'none';
+        bar.style.width = '0%';
+        
+        // Avvia Effetto Luce
+        clearSimulationEffects();
+        simInterval = setInterval(animateSimulation, 80); // Cambia luci ogni 80ms
+
+        const SIMULATIONS = 10000;
+        const CHUNK = 200; // Ridotto per far durare un po' di più l'animazione
+        const counts = new Array(91).fill(0);
+        const countsSS = new Array(91).fill(0);
+        let progress = 0;
+
+        function runChunk() {
+            for(let k=0; k<CHUNK; k++) {
+                if(progress >= SIMULATIONS) break;
+
+                // 1. Estrazione Sestina
+                const extracted = new Set();
+                const totalWeight = scores.reduce((a,b)=>a+b, 0);
+                while(extracted.size < 6) {
+                    let r = Math.random() * totalWeight;
+                    let sum = 0;
+                    for(let n=1; n<=90; n++) {
+                        sum += scores[n];
+                        if(r <= sum) { extracted.add(n); break; }
+                    }
+                }
+                extracted.forEach(n => counts[n]++);
+
+                // 2. Estrazione SuperStar
+                const totalWeightSS = scoresSS.reduce((a,b)=>a+b, 0);
+                let rSS = Math.random() * totalWeightSS;
+                let sumSS = 0;
+                let extractedSS = 0;
+                for(let n=1; n<=90; n++) {
+                    sumSS += scoresSS[n];
+                    if(rSS <= sumSS) { extractedSS = n; break; }
+                }
+                if(extractedSS > 0) countsSS[extractedSS]++;
+
+                progress++;
+            }
+
+            const pct = (progress / SIMULATIONS) * 100;
+            bar.style.width = `${pct}%`;
+
+            if(progress < SIMULATIONS) {
+                requestAnimationFrame(runChunk);
+            } else {
+                setTimeout(() => showResults(counts, countsSS), 500);
+            }
+        }
+
+        runChunk();
+    }
+
+    function showResults(counts, countsSS) {
+        clearSimulationEffects(); // Stop Animazione
+
+        document.getElementById('loader').style.display = 'none';
+        const results = document.getElementById('results');
+        results.style.display = 'block';
+
+        const ranked = [];
+        for(let n=1; n<=90; n++) ranked.push({n, c: counts[n]});
+        ranked.sort((a,b) => b.c - a.c);
+
+        const rankedSS = [];
+        for(let n=1; n<=90; n++) rankedSS.push({n, c: countsSS[n]});
+        rankedSS.sort((a,b) => b.c - a.c);
+
+        let html = '';
+
+        // 1. L'ELETTA
+        const top6 = ranked.slice(0, 6).map(o => o.n).sort((a,b)=>a-b);
+        const bestSS = rankedSS[0].n;
+        html += `
+        <div class="card" style="border-color: #00d2ff;">
+            <div>
+                <h3>🏆 L'ELETTA (Top Monte Carlo)</h3>
+                <div class="numbers">${top6.join(' - ')} <span style="color:#ff7a00; font-size:0.8em; margin-left:10px;">★ ${String(bestSS).padStart(2,'0')}</span></div>
+                <div class="desc">La combinazione più probabile secondo la simulazione.</div>
+            </div>
+            <div class="icon">👑</div>
+        </div>`;
+
+        // 2. EQUILIBRIO
+        const topA = ranked.slice(0, 10).map(o => o.n);
+        const topB = ranked.slice(10, 20).map(o => o.n);
+        const mix = [];
+        for(let i=0; i<3; i++) mix.push(topA[Math.floor(Math.random()*topA.length)]);
+        for(let i=0; i<3; i++) mix.push(topB[Math.floor(Math.random()*topB.length)]);
+        const mixSet = new Set(mix);
+        while(mixSet.size < 6) mixSet.add(topA[Math.floor(Math.random()*topA.length)]);
+        
+        const altSS = rankedSS[Math.floor(Math.random() * 3)].n; 
+
+        html += `
+        <div class="card" style="border-color: #a29bfe;">
+            <div>
+                <h3>⚖️ EQUILIBRIO (Sistema Misto)</h3>
+                <div class="numbers" style="color:#a29bfe;">${Array.from(mixSet).sort((a,b)=>a-b).join(' - ')} <span style="color:#ff7a00; font-size:0.8em; margin-left:10px;">★ ${String(altSS).padStart(2,'0')}</span></div>
+                <div class="desc">Mix bilanciato con SuperStar alternativo.</div>
+            </div>
+            <div class="icon">⚖️</div>
+        </div>`;
+
+        // 3. SISTEMA 12
+        const top12 = ranked.slice(0, 12).map(o => o.n).sort((a,b)=>a-b);
+        const top2SS = rankedSS.slice(0, 2).map(o => String(o.n).padStart(2,'0')).join(' e ');
+
+        html += `
+        <div class="system-box">
+            <h3 style="color:#fdbb2d; margin-top:0;">📐 Sistema Ridotto a 12 Numeri</h3>
+            <div style="font-size:1.5rem; font-family:'Consolas', monospace; color:white; letter-spacing:2px; margin:10px 0; background:rgba(255,255,255,0.1); padding:15px; border-radius:10px;">
+                ${top12.join(' - ')}
+            </div>
+            <div style="color:#ff7a00; font-weight:bold; font-size:1.1rem; margin-top:10px;">
+                Migliori SuperStar: ★ ${top2SS}
+            </div>
+            <p style="font-size:0.8rem; color:#aaa; margin-top:5px;">
+                I migliori 12 numeri emersi dalla simulazione per sistemi integrali.
+            </p>
+        </div>`;
+
+        // 4. SVILUPPO SISTEMA (Combinazioni con NUMERI FANTASMA)
+        // Prendiamo i 12 numeri originali
+        const top12Ranked = ranked.slice(0, 12).map(o => o.n);
+        
+        // --- LOGICA FANTASMI (Numeri mai usciti o super ritardatari) ---
+        // 1. Cerchiamo numeri con frequenza 0 nell'archivio
+        const historyFlat = parsedHistory.flat();
+        const zeroFreqNums = [];
+        for(let n=1; n<=90; n++) {
+            if(!historyFlat.includes(n)) zeroFreqNums.push(n);
+        }
+
+        // 2. Se non bastano, prendiamo i ritardatari (calcoliamo al volo il ritardo)
+        const delayMap = [];
+        for(let n=1; n<=90; n++) {
+            let r = 0;
+            for(let i=0; i<parsedHistory.length; i++) {
+                if(parsedHistory[i].includes(n)) break;
+                r++;
+            }
+            delayMap.push({n, r});
+        }
+        delayMap.sort((a,b) => b.r - a.r); // Ordina per ritardo decrescente
+
+        let ghosts = [...zeroFreqNums];
+        // Riempiamo con i ritardatari se abbiamo meno di 2 fantasmi
+        let dIdx = 0;
+        while(ghosts.length < 2 && dIdx < delayMap.length) {
+            const candidate = delayMap[dIdx].n;
+            if(!ghosts.includes(candidate)) ghosts.push(candidate);
+            dIdx++;
+        }
+
+        // Prendiamo i primi due fantasmi
+        const ghost1 = ghosts[0];
+        const ghost2 = ghosts[1];
+        // ---------------------------------------------------------------
+
+        // Generiamo 4 sestine strategiche
+        const combs = [];
+        
+        // Comb 1: L'ELITE (Pura Top 6) - Nessun fantasma
+        combs.push([...top12Ranked.slice(0, 6)].sort((a,b)=>a-b));
+        
+        // Comb 2: INFILTRAZIONE (Mix Top + Fantasma 1)
+        // Prende posizioni 0,2,4,6,8 e aggiunge Ghost1
+        let c2 = [top12Ranked[0], top12Ranked[2], top12Ranked[4], top12Ranked[6], top12Ranked[8], ghost1];
+        combs.push(c2.sort((a,b)=>a-b));
+        
+        // Comb 3: AGGUATO (Mix Top + Fantasma 2)
+        // Prende posizioni 1,3,5,7,9 e aggiunge Ghost2
+        let c3 = [top12Ranked[1], top12Ranked[3], top12Ranked[5], top12Ranked[7], top12Ranked[9], ghost2];
+        combs.push(c3.sort((a,b)=>a-b));
+        
+        // Comb 4: AZZARDO TOTALE (Top 4 + I Due Fantasmi)
+        let c4 = [top12Ranked[0], top12Ranked[1], top12Ranked[2], top12Ranked[3], ghost1, ghost2];
+        combs.push(c4.sort((a,b)=>a-b));
+
+        // Prepariamo i SuperStar (Alterniamo il 1° e il 2°)
+        const bestSS1 = rankedSS[0].n;
+        const bestSS2 = rankedSS[1] ? rankedSS[1].n : bestSS1;
+        const ssAssignments = [bestSS1, bestSS2, bestSS1, bestSS2];
+        const labels = ["L'Elite (Pura)", "Infiltrazione 👻", "L'Agguato 👻", "Azzardo Totale 👻👻"];
+
+        html += `
+        <div class="system-box" style="margin-top:20px; border-style:solid; border-color: rgba(255,255,255,0.1);">
+            <h4 style="color:#00d2ff; margin:0 0 5px 0;">🧬 Sviluppo Sistema con FANTASMI</h4>
+            <p style="font-size:0.8rem; color:#aaa; margin-bottom:15px;">
+                I <span style="color:#fff;">Fantasmi (👻)</span> sono i numeri esclusi per un soffio (13° e 14°), pronti a sorprendere.
+            </p>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                ${combs.map((c, i) => {
+                    // Formattazione speciale per evidenziare i fantasmi
+                    const formattedNums = c.map(n => {
+                        if (n === ghost1 || n === ghost2) return `<span style="color:#ff7675; font-weight:bold; border-bottom:1px dashed #ff7675;">${n}</span>`;
+                        return n;
+                    }).join(' - ');
+
+                    return `
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:5px; display:flex; justify-content:space-between; align-items:center;">
+                        <span style="color:#aaa; font-size:0.8rem; width:100px;">${labels[i]}</span>
+                        <div>
+                            <span style="font-family:'Consolas', monospace; font-size:1.2rem; color:#fff;">${formattedNums}</span>
+                            <span style="color:#ff7a00; font-size:1rem; margin-left:15px; font-weight:bold;">★ ${String(ssAssignments[i]).padStart(2,'0')}</span>
+                        </div>
+                    </div>
+                `}).join('')}
+            </div>
+        </div>`;
+
+        results.innerHTML = html;
+    }
+</script>
+
+</body>
+</html>

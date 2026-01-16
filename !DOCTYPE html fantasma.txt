@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SuperEnalotto - Step 1: Analisi & Fantasmi</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        h2, h3, h4 { color: #ffd700; margin-top: 0; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); }
+        p { line-height: 1.6; color: #e0e0e0; }
+
+        textarea {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 15px;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            resize: vertical;
+            box-sizing: border-box;
+            margin-bottom: 20px;
+        }
+        textarea:focus { outline: none; border-color: #ffd700; background: rgba(0, 0, 0, 0.3); }
+
+        .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+
+        .btn-analyze { background: #4CAF50; color: white; }
+        .btn-load { background: #2196F3; color: white; }
+        .btn-clear { background: rgba(255, 255, 255, 0.2); color: white; border: 1px solid rgba(255,255,255,0.3); }
+        .btn-ghost { background: linear-gradient(45deg, #673AB7, #9C27B0); color: white; width: 100%; margin-top: 10px; font-size: 1.1rem; }
+
+        .box {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 15px;
+            margin-top: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .chart-container {
+            width: 100%;
+            overflow-x: auto;
+            margin-top: 20px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            padding: 10px;
+        }
+        canvas { display: block; width: 100%; height: 250px; }
+
+        ul { list-style-type: none; padding: 0; }
+        li {
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            margin: 5px 0;
+            border-radius: 8px;
+            border-left: 4px solid #2196F3;
+            display: flex; justify-content: space-between;
+        }
+
+        .back-link {
+            display: inline-block; margin-bottom: 20px; color: #ffd700; text-decoration: none; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <a href="index.html" class="back-link">← Torna alla Home</a>
+
+    <h2>Analisi Step 1 & Generatore Fantasmi</h2>
+    <p>Incolla le estrazioni per analizzare frequenze e trovare i numeri assenti nell&apos;ultimo anno.</p>
+
+    <textarea id="estrazioni" rows="10" placeholder="Incolla qui: 1,2,3,4,5,6 | data..."></textarea>
+
+    <div class="actions">
+        <button class="btn-analyze" onclick="analizza()">🔍 Analizza Tutto</button>
+        <button class="btn-load" onclick="caricaPrecedente()">📂 Carica Ultima Sessione</button>
+        
+        <!-- Nuovo pulsante per caricare da file -->
+        <input type="file" id="fileInput" accept=".txt" style="display: none;" onchange="leggiFile(this)">
+        <button class="btn-load" style="background: #FF9800;" onclick="document.getElementById('fileInput').click()">📂 Carica da File</button>
+
+        <button class="btn-clear" onclick="pulisci()">🗑️ Pulisci</button>
+    </div>
+
+    <!-- Contenitore Grafico -->
+    <div id="chartBox" class="box" style="display:none;">
+        <h4>📊 Frequenza Numeri (Totale)</h4>
+        <div class="chart-container">
+            <canvas id="freqChart"></canvas>
+        </div>
+    </div>
+
+    <div id="risultati" class="box" style="display:none;"></div>
+
+    <button class="btn-ghost" onclick="generaFantasmi()">👻 GENERA SESTINE "FANTASMA" (Assenti 1 Anno)</button>
+    
+    <div id="generata" class="box" style="display:none;"></div>
+</div>
+
+<script>
+    let statsGlobal = null;
+
+    function analizza() {
+        const input = document.getElementById('estrazioni').value;
+        localStorage.setItem('superenalotto_last_data', input);
+        const estrazioni = input.split('\n')
+            .map(linea => {
+                const trimmed = linea.trim();
+                if (!trimmed) return [];
+                // Supporta sia "1,2,3 | data" che "1,2,3"
+                const parteNumeri = trimmed.includes('|') ? trimmed.split('|')[0] : trimmed;
+                return parteNumeri ? parteNumeri.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n)) : [];
+            })
+            .filter(estrazione => estrazione.length === 6);
+
+        if (estrazioni.length === 0) {
+            alert("Nessuna estrazione valida trovata! Controlla il formato del file.");
+            return;
+        }
+
+        const frequenze = Array(91).fill(0);
+        const ritardi = Array(91).fill(0);
+
+        // Calcolo su TUTTO il dataset
+        estrazioni.flat().forEach(num => frequenze[num]++);
+
+        for(let num=1; num<=90; num++) {
+            let ritardo = estrazioni.length; // Default se mai uscito
+            for(let i=0; i<estrazioni.length; i++) {
+                if(estrazioni[i].includes(num)) {
+                    ritardo = i;
+                    break;
+                }
+            }
+            ritardi[num] = ritardo;
+        }
+
+        statsGlobal = { estrazioni, frequenze, ritardi };
+        mostraRisultati(frequenze, ritardi, estrazioni[0], estrazioni.length);
+        
+        // Grafico
+        document.getElementById('chartBox').style.display = 'block';
+        drawChart(frequenze);
+    }
+
+    function mostraRisultati(frequenze, ritardi, ultima, totaleEstrazioni) {
+        const risDiv = document.getElementById('risultati');
+        risDiv.style.display = 'block';
+
+        let html = `
+            <p><strong>Ultima estrazione:</strong> <span style="color:#ffd700">${ultima.join(', ')}</span></p>
+            <p style="font-size:0.9rem">Analizzate <strong>${totaleEstrazioni}</strong> estrazioni totali.</p>
+        `;
+
+        // Più frequenti
+        const frequenti = [];
+        for(let i=1; i<=90; i++) if(frequenze[i]>0) frequenti.push({num: i, freq: frequenze[i]});
+        frequenti.sort((a,b) => b.freq - a.freq);
+
+        html += '<h4>🔥 Top 5 Più Frequenti</h4><ul>';
+        frequenti.slice(0,5).forEach(({num, freq}) => {
+            html += `<li><span>Numero <strong>${String(num).padStart(2,'0')}</strong></span> <span>${freq} presenze</span></li>`;
+        });
+        html += '</ul>';
+
+        // Ritardatari
+        const rit = [];
+        for(let i=1; i<=90; i++) rit.push({num: i, ritardo: ritardi[i]});
+        rit.sort((a,b) => b.ritardo - a.ritardo);
+
+        html += '<h4>❄️ Top 5 Ritardatari</h4><ul>';
+        rit.slice(0,5).forEach(({num, ritardo}) => {
+            html += `<li><span>Numero <strong>${String(num).padStart(2,'0')}</strong></span> <span>Ritardo ${ritardo}</span></li>`;
+        });
+        html += '</ul>';
+
+        risDiv.innerHTML = html;
+    }
+
+    function generaFantasmi() {
+        if (!statsGlobal || statsGlobal.estrazioni.length === 0) {
+            alert("⚠️ Esegui prima l'analisi!");
+            return;
+        }
+
+        const genDiv = document.getElementById("generata");
+        genDiv.style.display = 'block';
+
+        // Definiamo "1 anno" come le ultime 155 estrazioni (circa)
+        // Se ce ne sono meno, usiamo tutte quelle disponibili.
+        const limit = Math.min(statsGlobal.estrazioni.length, 155);
+        const recentHistory = statsGlobal.estrazioni.slice(0, limit); // Prende le prime 'limit' (più recenti)
+
+        // Calcoliamo la frequenza SOLO in questo periodo recente
+        const freqRecenti = Array(91).fill(0);
+        recentHistory.flat().forEach(n => freqRecenti[n]++);
+
+        // Troviamo i numeri con frequenza 0 (Fantasmi)
+        let fantasmi = [];
+        let quasiFantasmi = []; // Quelli usciti solo 1 volta (backup)
+
+        for(let n=1; n<=90; n++) {
+            if(freqRecenti[n] === 0) fantasmi.push(n);
+            if(freqRecenti[n] === 1) quasiFantasmi.push(n);
+        }
+
+        let html = `<h3 style="border-bottom:1px solid #ffffff55; padding-bottom:10px;">👻 Pronostico "Fantasmi"</h3>`;
+        html += `<p style="font-size:0.9rem">Analisi basata sulle ultime <strong>${limit}</strong> estrazioni (1 Anno ca.).</p>`;
+        
+        if (fantasmi.length > 0) {
+            html += `<p>Trovati <strong>${fantasmi.length}</strong> numeri mai usciti in questo periodo: <br><span style="color:#aaa">${fantasmi.join(', ')}</span></p>`;
+        } else {
+            html += `<p>⚠️ Incredibile! Tutti i 90 numeri sono usciti nell'ultimo anno. Userò i meno frequenti.</p>`;
+        }
+
+        // Creiamo il pool da cui pescare: prima i fantasmi, poi i quasi fantasmi
+        let pool = [...fantasmi];
+        
+        // Se non bastano per 2 sestine (12 numeri), aggiungiamo i "quasi fantasmi"
+        if (pool.length < 12) {
+            pool = pool.concat(quasiFantasmi);
+        }
+        
+        // Se ancora non bastano (caso rarissimo), aggiungiamo numeri random
+        while(pool.length < 12) {
+            let r = Math.floor(Math.random() * 90) + 1;
+            if(!pool.includes(r)) pool.push(r);
+        }
+
+        // Generiamo 2 sestine uniche
+        html += `<div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top:15px;">`;
+
+        for (let i = 1; i <= 2; i++) {
+            const sestina = new Set();
+            let attempts = 0;
+            while(sestina.size < 6 && attempts < 100) {
+                // Pesca casualmente dal pool dei "freddi"
+                const idx = Math.floor(Math.random() * pool.length);
+                sestina.add(pool[idx]);
+                attempts++;
+            }
+            
+            // Ordina
+            const sArr = Array.from(sestina).sort((a,b)=>a-b);
+
+            html += `
+                <div style="background: rgba(103, 58, 183, 0.4); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 15px; width: 45%; min-width: 250px;">
+                    <div style="font-size: 0.9rem; color: #E0E0E0; font-weight: bold; margin-bottom: 5px;">SESTINA FANTASMA #${i}</div>
+                    <div style="font-size: 1.4rem; color: #fff; font-weight: bold; letter-spacing: 1px;">
+                        ${sArr.join(" - ")}
+                    </div>
+                </div>
+            `;
+        }
+        html += `</div>`;
+
+        genDiv.innerHTML = html;
+    }
+
+    function drawChart(freq) {
+        const canvas = document.getElementById('freqChart');
+        const ctx = canvas.getContext('2d');
+        
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+
+        const width = rect.width;
+        const height = rect.height;
+        ctx.clearRect(0, 0, width, height);
+
+        const maxFreq = Math.max(...freq.slice(1));
+        const barWidth = (width - 40) / 90; 
+        
+        // Assi
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.beginPath();
+        ctx.moveTo(30, height - 20);
+        ctx.lineTo(width, height - 20);
+        ctx.stroke();
+
+        for(let i = 1; i <= 90; i++) {
+            const val = freq[i];
+            const barHeight = (val / maxFreq) * (height - 40);
+            const x = 30 + (i - 1) * barWidth;
+            const y = height - 20 - barHeight;
+
+            const hue = 240 - (val / maxFreq * 240); 
+            ctx.fillStyle = `hsl(${hue}, 70%, 60%)`;
+            ctx.fillRect(x, y, barWidth - 1, barHeight);
+        }
+    }
+
+    function leggiFile(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const contenuto = e.target.result;
+            document.getElementById('estrazioni').value = contenuto;
+            localStorage.setItem('superenalotto_last_data', contenuto);
+            
+            // Avvia automaticamente l'analisi
+            setTimeout(analizza, 100);
+        };
+        reader.readAsText(file);
+        input.value = ''; // Reset per ricaricare lo stesso file
+    }
+
+    function caricaPrecedente() {
+        const saved = localStorage.getItem('superenalotto_last_data');
+        if (saved) {
+            document.getElementById('estrazioni').value = saved;
+        } else {
+            alert("Nessuna estrazione salvata in memoria!");
+        }
+    }
+
+    function pulisci() {
+        document.getElementById('estrazioni').value = '';
+        document.getElementById('risultati').style.display = 'none';
+        document.getElementById('generata').style.display = 'none';
+        document.getElementById('chartBox').style.display = 'none';
+        statsGlobal = null;
+    }
+</script>
+</body>
+</html>

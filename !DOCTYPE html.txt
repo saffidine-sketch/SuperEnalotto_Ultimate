@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard SuperEnalotto Unica</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body { font-family: 'Segoe UI', sans-serif; background:#0f1220; color:#eaeaf0; padding:20px; }
+textarea { width:100%; height:120px; margin-bottom:10px; border-radius:10px; padding:10px; font-size:1rem; }
+button { padding:10px 20px; border-radius:10px; cursor:pointer; background:#667eea; color:#fff; font-weight:bold; margin-bottom:20px; }
+.grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap:15px; margin-bottom:20px; }
+.card { background:#181b33; padding:20px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.3); }
+.kpi { font-size:1.8rem; font-weight:bold; }
+.good { color:#2ed573; } .bad { color:#ff4757; }
+.verdict { text-align:center; font-size:1.2rem; padding:20px; border-radius:12px; }
+.heatmap { display:grid; grid-template-columns: repeat(10,1fr); gap:5px; margin-bottom:20px; }
+.cell { background:#2d3436; border-radius:6px; color:#b2bec3; display:flex; align-items:center; justify-content:center; height:40px; font-weight:bold; cursor:default; }
+.cell.hot { background:#ff4757; color:white; }
+.cell.cold { background:#2ed573; color:black; }
+.cell.trend { background:#ffa502; color:black; }
+</style>
+</head>
+<body>
+
+<h1>🚀 Dashboard SuperEnalotto Live</h1>
+<textarea id="historyInput" placeholder="Incolla estrazioni (1,2,3,4,5,6 | SS: ...)"></textarea>
+<button id="runBtn">Avvia Simulazione</button>
+
+<div class="grid">
+  <div class="card"><h3>Media colpi</h3><div class="kpi" id="algoAvg"></div></div>
+  <div class="card"><h3>Media colpi Random</h3><div class="kpi" id="randAvg"></div></div>
+  <div class="card"><h3>Delta</h3><div class="kpi" id="delta"></div></div>
+</div>
+
+<div class="card">
+  <canvas id="histogram"></canvas>
+</div>
+
+<div class="card heatmap" id="heatmap"></div>
+<div id="verdict" class="card verdict"></div>
+
+<script>
+// ---------------------- LOGICA ----------------------
+
+// Parser dati
+function parseData(rawLines){
+    const history=[], superstars=[];
+    rawLines.forEach(l=>{
+        const parts=l.split('|');
+        const nums=parts[0].split(',').map(n=>parseInt(n.trim()));
+        if(nums.length===6) history.push(nums);
+        if(parts[1]){
+            const match=parts[1].match(/\d+/);
+            superstars.push(match?parseInt(match[0]):null);
+        } else superstars.push(null);
+    });
+    return {history, superstars};
+}
+
+// Calcolo pesi + score base
+function computeScores(history){
+    const freq=Array(91).fill(0);
+    history.flat().forEach(n=>freq[n]++);
+    const ritardo=Array(91).fill(0);
+    for(let n=1;n<=90;n++){
+        let r=0;
+        for(let i=0;i<history.length;i++){
+            if(history[i].includes(n)) break;
+            r++;
+        }
+        ritardo[n]=r;
+    }
+    const recent=Array(91).fill(0);
+    const limit=Math.min(history.length,12);
+    for(let i=0;i<limit;i++) history[i].forEach(n=>recent[n]++);
+    return {freq, ritardo, recent};
+}
+
+// Grid search ottimizzazione
+function optimize(history){
+    const steps=[0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1];
+    let best={weights:{f:0,d:0,t:1}, score:-Infinity};
+    for(const f of steps){
+        for(const d of steps){
+            if(f+d>1) continue;
+            const t=1-f-d;
+            const res=monteCarlo(history,{f,d,t},500);
+            const avg=arr=>arr.reduce((a,b)=>a+b,0)/arr.length;
+            const delta=avg(res.algo.hits)-avg(res.random.hits);
+            if(delta>best.score) best={weights:{f,d,t},score:delta};
+        }
+    }
+    return best;
+}
+
+// Monte Carlo sestine
+function monteCarlo(history,weights={f:0.4,d:0.4,t:0.2},iterations=1000){
+    const algoHits=[], randomHits=[];
+    for(let i=0;i<iterations;i++){
+        let selected=new Set();
+        while(selected.size<6) selected.add(Math.floor(Math.random()*90)+1);
+        algoHits.push(selected.size);
+        selected=new Set();
+        while(selected.size<6) selected.add(Math.floor(Math.random()*90)+1);
+        randomHits.push(selected.size);
+    }
+    function distribution(arr){ const dist={0:0,1:0,2:0,3:0,'4+':0}; arr.forEach(v=>{ if(v>=4) dist['4+']++; else dist[v]++;}); return dist;}
+    return {algo:{hits:algoHits,distribution:distribution(algoHits)},random:{hits:randomHits,distribution:distribution(randomHits)}};
+}
+
+// Heatmap visual
+function renderHeatmap(scores){
+    const container=document.getElementById('heatmap');
+    container.innerHTML='';
+    for(let i=1;i<=90;i++){
+        const cell=document.createElement('div');
+        cell.className='cell';
+        cell.textContent=i;
+        if(scores.freq[i]>Math.max(...scores.freq)*0.15) cell.classList.add('hot');
+        else if(scores.ritardo[i]>30) cell.classList.add('cold');
+        else if(scores.recent[i]>=2) cell.classList.add('trend');
+        container.appendChild(cell);
+    }
+}
+
+// ---------------------- INTERAZIONE ----------------------
+document.getElementById('runBtn').addEventListener('click',()=>{
+    const raw=document.getElementById('historyInput').value.trim().split('\n');
+    const {history, superstars}=parseData(raw);
+    if(history.length===0){alert('⚠️ Inserisci estrazioni'); return;}
+
+    const scores=computeScores(history);
+    renderHeatmap(scores);
+
+    const best=optimize(history);
+    const res=monteCarlo(history,best.weights,1000);
+
+    const algoAvg=res.algo.hits.reduce((a,b)=>a+b,0)/res.algo.hits.length;
+    const randAvg=res.random.hits.reduce((a,b)=>a+b,0)/res.random.hits.length;
+    const delta=algoAvg-randAvg;
+
+    document.getElementById('algoAvg').textContent=algoAvg.toFixed(3);
+    document.getElementById('randAvg').textContent=randAvg.toFixed(3);
+    const deltaEl=document.getElementById('delta');
+    deltaEl.textContent=delta.toFixed(3);
+    deltaEl.className='kpi '+(delta>0?'good':'bad');
+
+    const labels=['0','1','2','3','4+'];
+    const algoData=labels.map(l=>res.algo.distribution[l]||0);
+    const randData=labels.map(l=>res.random.distribution[l]||0);
+
+    new Chart(document.getElementById('histogram'),{
+        type:'bar',
+        data:{labels,datasets:[
+            {label:'Algoritmo',data:algoData,backgroundColor:'#667eea'},
+            {label:'Random',data:randData,backgroundColor:'#444'}
+        ]},
+        options:{responsive:true}
+    });
+
+    const verdictBox=document.getElementById('verdict');
+    if(delta>0.03){verdictBox.textContent='✅ Algoritmo statisticamente migliore'; verdictBox.style.background='#1e7f4d';}
+    else if(delta>-0.02){verdictBox.textContent='⚠️ Algoritmo equivalente al caso'; verdictBox.style.background='#7f6a1e';}
+    else{verdictBox.textContent='❌ Algoritmo peggiore del caso'; verdictBox.style.background='#7f1e1e';}
+});
+</script>
+
+</body>
+</html>
